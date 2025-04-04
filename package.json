@@ -20,7 +20,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@scottluskcis/octokit-harness": "^0.0.4"
+    "@scottluskcis/octokit-harness": "^0.0.4",
+    "filesize": "^10.1.6"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.3",
