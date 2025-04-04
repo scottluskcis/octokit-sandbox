@@ -33,3 +33,5 @@ output/
 
 # Ignore test coverage reports
 coverage/
+
+*.csv

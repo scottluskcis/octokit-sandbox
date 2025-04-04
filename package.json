@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "bundle": "npm run format:write && npm run package",
-    "start": "node dist/index.js",
+    "start": "npm run bundle && node dist/index.js",
     "dev": "npx tsx src/index.ts",
     "format:write": "npx prettier --write .",
     "format:check": "npx prettier --check .",
@@ -21,6 +21,7 @@
   "description": "",
   "dependencies": {
     "@scottluskcis/octokit-harness": "^0.0.4",
+    "csv-parse": "^5.6.0",
     "filesize": "^10.1.6"
   },
   "devDependencies": {
