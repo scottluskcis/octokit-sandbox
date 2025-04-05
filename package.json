@@ -20,7 +20,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@scottluskcis/octokit-harness": "^0.0.4",
+    "@scottluskcis/octokit-harness": "^0.0.8",
     "csv-parse": "^5.6.0",
     "filesize": "^10.1.6"
   },
