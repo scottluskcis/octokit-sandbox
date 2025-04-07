@@ -30,11 +30,11 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "find-packages",
+      "name": "get-package-details",
       "skipFiles": ["<node_internals>/**"],
       "runtimeExecutable": "tsx",
       "program": "${workspaceFolder}/src/index.ts",
-      "args": ["find-packages"],
+      "args": ["get-package-details"],
       "sourceMaps": true,
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
