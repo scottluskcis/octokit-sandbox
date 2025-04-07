@@ -3,7 +3,7 @@ import {
   executeWithOctokit,
 } from '@scottluskcis/octokit-harness';
 
-import { Octokit } from 'octokit';
+import { Octokit, PageInfoForward } from 'octokit';
 
 import fs from 'fs';
 import path from 'path';
@@ -49,7 +49,7 @@ interface PackagesResponse {
 const PACKAGE_DETAILS_QUERY = `
 query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endCursor: String) {
   organization(login: $organization) {
-    packages(last: $pageSize, packageType: $packageType, after: $endCursor) {
+    packages(first: $pageSize, packageType: $packageType, after: $endCursor) {
       nodes {
         name
         packageType
@@ -87,22 +87,49 @@ async function* getOrgPackageDetails(
   pageSize: number = 100,
   endCursor: string | null = null,
 ): AsyncGenerator<PackageDetail, void, unknown> {
-  const iterator = octokit.graphql.paginate.iterator<PackagesResponse>(
-    PACKAGE_DETAILS_QUERY,
-    {
-      organization,
-      packageType,
-      pageSize,
-      endCursor,
-    },
-  );
+  let totalFetched = 0;
+  let pageCount = 0;
+  let hasNextPage = true;
+  let currentCursor = endCursor;
 
-  for await (const response of iterator) {
+  while (hasNextPage) {
+    pageCount++;
+    logger.info(
+      `Fetching page ${pageCount} with cursor: ${currentCursor || 'initial'}`,
+    );
+
+    const response = await octokit.graphql<PackagesResponse>(
+      PACKAGE_DETAILS_QUERY,
+      {
+        organization,
+        packageType,
+        pageSize,
+        endCursor: currentCursor,
+      },
+    );
+
     const packages = response.organization.packages.nodes;
-    logger.info(`Retrieved ${packages.length} packages`);
+    const pageInfo = response.organization.packages.pageInfo;
+
+    totalFetched += packages.length;
+    logger.info(
+      `Page ${pageCount}: Retrieved ${packages.length} packages (${totalFetched} total so far)`,
+    );
+    logger.info(
+      `Has next page: ${pageInfo.hasNextPage}, End cursor: ${pageInfo.endCursor}`,
+    );
 
     for (const pkg of packages) {
       yield pkg;
+    }
+
+    hasNextPage = pageInfo.hasNextPage;
+    currentCursor = pageInfo.endCursor;
+
+    if (!hasNextPage) {
+      logger.info(
+        `Reached final page. Total packages fetched: ${totalFetched}`,
+      );
     }
   }
 }
@@ -147,6 +174,7 @@ const getPackageDetailsCommand = createBaseCommand({
         organization,
         packageType,
         logger,
+        opts.pageSize,
       )) {
         const csvRow = packageToCSVRow(pkg);
         fs.appendFileSync(csvOutput, csvRow + '\n');
