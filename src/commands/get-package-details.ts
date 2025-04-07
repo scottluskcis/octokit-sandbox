@@ -8,7 +8,6 @@ import { Octokit } from 'octokit';
 import fs from 'fs';
 import path from 'path';
 
-// Define interfaces for the GraphQL response
 interface PackageFile {
   name: string;
   size: number;
@@ -80,9 +79,6 @@ query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endC
   }
 }`;
 
-/**
- * Async generator to iterate through all packages for an organization
- */
 async function* getOrgPackageDetails(
   octokit: Octokit,
   organization: string,
@@ -141,7 +137,10 @@ const getPackageDetailsCommand = createBaseCommand({
       logger.info(`Fetching packages for organization: ${organization}`);
       logger.info(`Package type: ${packageType}`);
 
-      const allPackages: PackageDetail[] = [];
+      fs.writeFileSync(csvOutput, getCSVHeaders() + '\n');
+      logger.info(`Created CSV file with headers at ${csvOutput}`);
+
+      let packageCount = 0;
 
       for await (const pkg of getOrgPackageDetails(
         octokit,
@@ -149,25 +148,60 @@ const getPackageDetailsCommand = createBaseCommand({
         packageType,
         logger,
       )) {
-        allPackages.push(pkg);
+        const csvRow = packageToCSVRow(pkg);
+        fs.appendFileSync(csvOutput, csvRow + '\n');
+
+        packageCount++;
+        if (packageCount % 100 === 0) {
+          logger.info(`Processed ${packageCount} packages so far`);
+        }
       }
 
-      logger.info(`Total packages retrieved: ${allPackages.length}`);
+      logger.info(
+        `Total packages retrieved and written to CSV: ${packageCount}`,
+      );
 
-      // Process and write to CSV
-      if (allPackages.length > 0) {
-        const csvData = convertToCSV(allPackages);
-        fs.writeFileSync(csvOutput, csvData);
-        logger.info(`CSV data written to ${csvOutput}`);
-      } else {
+      if (packageCount === 0) {
         logger.info('No packages found');
+      } else {
+        logger.info(`CSV data written incrementally to ${csvOutput}`);
       }
     });
   });
 
-// Helper function to convert package data to CSV
-function convertToCSV(packages: PackageDetail[]): string {
-  const headers = [
+function packageToCSVRow(pkg: PackageDetail): string {
+  const repoName = pkg.repository ? pkg.repository.name : 'N/A';
+  const isArchived = pkg.repository ? pkg.repository.isArchived : false;
+  const downloads = pkg.statistics ? pkg.statistics.downloadsTotalCount : 0;
+  const version = pkg.latestVersion ? pkg.latestVersion.version : 'N/A';
+
+  const fileInfo =
+    pkg.latestVersion &&
+    pkg.latestVersion.files &&
+    pkg.latestVersion.files.nodes &&
+    pkg.latestVersion.files.nodes.length > 0
+      ? pkg.latestVersion.files.nodes[0]
+      : null;
+
+  const fileName = fileInfo ? fileInfo.name : 'N/A';
+  const fileSize = fileInfo ? fileInfo.size : 'N/A';
+  const updatedAt = fileInfo ? fileInfo.updatedAt : 'N/A';
+
+  return [
+    pkg.name,
+    pkg.packageType,
+    repoName,
+    isArchived,
+    downloads,
+    version,
+    fileName,
+    fileSize,
+    updatedAt,
+  ].join(',');
+}
+
+function getCSVHeaders(): string {
+  return [
     'Name',
     'Package Type',
     'Repository',
@@ -178,40 +212,6 @@ function convertToCSV(packages: PackageDetail[]): string {
     'File Size (bytes)',
     'Last Updated',
   ].join(',');
-
-  const rows = packages.map((pkg) => {
-    const repoName = pkg.repository ? pkg.repository.name : 'N/A';
-    const isArchived = pkg.repository ? pkg.repository.isArchived : false;
-    const downloads = pkg.statistics ? pkg.statistics.downloadsTotalCount : 0;
-    const version = pkg.latestVersion ? pkg.latestVersion.version : 'N/A';
-
-    // Get the first file if it exists
-    const fileInfo =
-      pkg.latestVersion &&
-      pkg.latestVersion.files &&
-      pkg.latestVersion.files.nodes &&
-      pkg.latestVersion.files.nodes.length > 0
-        ? pkg.latestVersion.files.nodes[0]
-        : null;
-
-    const fileName = fileInfo ? fileInfo.name : 'N/A';
-    const fileSize = fileInfo ? fileInfo.size : 'N/A';
-    const updatedAt = fileInfo ? fileInfo.updatedAt : 'N/A';
-
-    return [
-      pkg.name,
-      pkg.packageType,
-      repoName,
-      isArchived,
-      downloads,
-      version,
-      fileName,
-      fileSize,
-      updatedAt,
-    ].join(',');
-  });
-
-  return [headers, ...rows].join('\n');
 }
 
 export default getPackageDetailsCommand;
