@@ -2,6 +2,9 @@ import {
   createBaseCommand,
   executeWithOctokit,
 } from '@scottluskcis/octokit-harness';
+
+import { Octokit } from 'octokit';
+
 import fs from 'fs';
 import path from 'path';
 
@@ -19,7 +22,7 @@ interface PackageVersion {
   version: string;
 }
 
-interface Package {
+interface PackageDetail {
   name: string;
   packageType: string;
   repository: {
@@ -35,7 +38,7 @@ interface Package {
 interface PackagesResponse {
   organization: {
     packages: {
-      nodes: Package[];
+      nodes: PackageDetail[];
       pageInfo: {
         hasNextPage: boolean;
         endCursor: string | null;
@@ -44,11 +47,10 @@ interface PackagesResponse {
   };
 }
 
-// GraphQL query for package details
 const PACKAGE_DETAILS_QUERY = `
-query($organization: String!, $packageType: PackageType!, $endCursor: String) {
+query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endCursor: String) {
   organization(login: $organization) {
-    packages(last: 100, packageType: $packageType, after: $endCursor) {
+    packages(last: $pageSize, packageType: $packageType, after: $endCursor) {
       nodes {
         name
         packageType
@@ -77,6 +79,37 @@ query($organization: String!, $packageType: PackageType!, $endCursor: String) {
     }
   }
 }`;
+
+/**
+ * Async generator to iterate through all packages for an organization
+ */
+async function* getOrgPackageDetails(
+  octokit: Octokit,
+  organization: string,
+  packageType: string,
+  logger: any,
+  pageSize: number = 100,
+  endCursor: string | null = null,
+): AsyncGenerator<PackageDetail, void, unknown> {
+  const iterator = octokit.graphql.paginate.iterator<PackagesResponse>(
+    PACKAGE_DETAILS_QUERY,
+    {
+      organization,
+      packageType,
+      pageSize,
+      endCursor,
+    },
+  );
+
+  for await (const response of iterator) {
+    const packages = response.organization.packages.nodes;
+    logger.info(`Retrieved ${packages.length} packages`);
+
+    for (const pkg of packages) {
+      yield pkg;
+    }
+  }
+}
 
 const getPackageDetailsCommand = createBaseCommand({
   name: 'get-package-details',
@@ -108,32 +141,15 @@ const getPackageDetailsCommand = createBaseCommand({
       logger.info(`Fetching packages for organization: ${organization}`);
       logger.info(`Package type: ${packageType}`);
 
-      const allPackages: Package[] = [];
-      let hasNextPage = true;
-      let endCursor: string | null = null;
+      const allPackages: PackageDetail[] = [];
 
-      // Paginate through all results
-      while (hasNextPage) {
-        logger.info(
-          `Fetching page${endCursor ? ' after cursor: ' + endCursor : ''}...`,
-        );
-
-        const result: PackagesResponse =
-          await octokit.graphql<PackagesResponse>(PACKAGE_DETAILS_QUERY, {
-            organization,
-            packageType,
-            endCursor,
-          });
-
-        const packages = result.organization.packages.nodes;
-        const { hasNextPage: nextPage, endCursor: nextCursor } =
-          result.organization.packages.pageInfo;
-
-        logger.info(`Retrieved ${packages.length} packages`);
-        allPackages.push(...packages);
-
-        hasNextPage = nextPage;
-        endCursor = nextCursor;
+      for await (const pkg of getOrgPackageDetails(
+        octokit,
+        organization,
+        packageType,
+        logger,
+      )) {
+        allPackages.push(pkg);
       }
 
       logger.info(`Total packages retrieved: ${allPackages.length}`);
@@ -150,7 +166,7 @@ const getPackageDetailsCommand = createBaseCommand({
   });
 
 // Helper function to convert package data to CSV
-function convertToCSV(packages: Package[]): string {
+function convertToCSV(packages: PackageDetail[]): string {
   const headers = [
     'Name',
     'Package Type',
