@@ -32,6 +32,9 @@ interface PackageDetail {
     downloadsTotalCount: number;
   };
   latestVersion: PackageVersion | null;
+  versions: {
+    totalCount: number;
+  };
 }
 
 interface PackagesResponse {
@@ -70,6 +73,9 @@ query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endC
           }
           version
         } 
+        versions {
+            totalCount
+        }
       }
       pageInfo {
         hasNextPage
@@ -214,6 +220,7 @@ function packageToCSVRow(pkg: PackageDetail): string {
   const fileName = fileInfo ? fileInfo.name : 'N/A';
   const fileSize = fileInfo ? fileInfo.size : 'N/A';
   const updatedAt = fileInfo ? fileInfo.updatedAt : 'N/A';
+  const totalVersions = pkg.versions ? pkg.versions.totalCount : 0;
 
   return [
     pkg.name,
@@ -225,6 +232,7 @@ function packageToCSVRow(pkg: PackageDetail): string {
     fileName,
     fileSize,
     updatedAt,
+    totalVersions,
   ].join(',');
 }
 
@@ -239,6 +247,7 @@ function getCSVHeaders(): string {
     'Latest File',
     'File Size (bytes)',
     'Last Updated',
+    'Total Versions',
   ].join(',');
 }
 
