@@ -51,16 +51,14 @@ interface PackagesResponse {
 }
 
 interface PackageVersionsResponse {
-  data: {
-    organization: {
-      packages: {
-        nodes: {
-          versions: {
-            nodes: { files: { nodes: { size: number }[] } }[];
-            pageInfo: { hasNextPage: boolean; endCursor: string | null };
-          };
-        }[];
-      };
+  organization: {
+    packages: {
+      nodes: {
+        versions: {
+          nodes: { files: { nodes: { size: number }[] } }[];
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        };
+      }[];
     };
   };
 }
@@ -108,7 +106,7 @@ query($organization: String!, $packageName: String!, $pageSize: Int!, $endCursor
       nodes {
         versions(first: $pageSize, after: $endCursor) {
           nodes {
-            files {
+            files(first: 100) {  
               nodes {
                 size
               }
@@ -199,41 +197,58 @@ async function getTotalPackageVersionsSize(
       `Fetching page ${pageCount} with cursor: ${currentCursor || 'initial'}`,
     );
 
-    const response = await octokit.graphql<PackageVersionsResponse>(
-      PACKAGE_VERSIONS_QUERY,
-      {
-        organization,
-        packageName,
-        pageSize,
-        endCursor: currentCursor,
-      },
-    );
-
-    const versions =
-      response.data.organization.packages.nodes[0]?.versions.nodes || [];
-    const pageInfo =
-      response.data.organization.packages.nodes[0]?.versions.pageInfo;
-
-    if (!versions || versions.length === 0) {
-      logger.warn(`No versions found for package: ${packageName}`);
-      return 0;
-    }
-
-    totalFetched += versions.length;
-
-    for (const version of versions) {
-      for (const file of version.files.nodes) {
-        totalSize += file.size || 0;
-      }
-    }
-
-    hasNextPage = pageInfo.hasNextPage;
-    currentCursor = pageInfo.endCursor;
-
-    if (!hasNextPage) {
-      logger.info(
-        `Reached final page. Total versions fetched: ${totalFetched}`,
+    try {
+      const response = await octokit.graphql<PackageVersionsResponse>(
+        PACKAGE_VERSIONS_QUERY,
+        {
+          organization,
+          packageName,
+          pageSize,
+          endCursor: currentCursor,
+        },
       );
+
+      if (!response.organization || !response.organization.packages.nodes[0]) {
+        logger.error(
+          `GraphQL response is missing expected data. Response: ${JSON.stringify(response)}`,
+        );
+        break; // Exit loop if data is missing
+      }
+
+      const versions =
+        response.organization.packages.nodes[0].versions.nodes || [];
+      const pageInfo =
+        response.organization.packages.nodes[0].versions.pageInfo;
+
+      if (!versions || versions.length === 0) {
+        logger.warn(`No versions found for package: ${packageName}`);
+        break; // Exit loop if no versions are found
+      }
+
+      totalFetched += versions.length;
+
+      // Sum up file sizes from all versions
+      for (const version of versions) {
+        if (version.files && version.files.nodes) {
+          for (const file of version.files.nodes) {
+            totalSize += file.size || 0;
+          }
+        }
+      }
+
+      hasNextPage = pageInfo.hasNextPage;
+      currentCursor = pageInfo.endCursor;
+
+      if (!hasNextPage) {
+        logger.info(
+          `Reached final page. Total versions fetched: ${totalFetched}`,
+        );
+      }
+    } catch (error) {
+      logger.error(
+        `Error fetching package versions for ${packageName}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      break; // Exit loop on error
     }
   }
   return totalSize;
