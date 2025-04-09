@@ -50,19 +50,6 @@ interface PackagesResponse {
   };
 }
 
-interface PackageVersionsResponse {
-  organization: {
-    packages: {
-      nodes: {
-        versions: {
-          nodes: { files: { nodes: { size: number }[] } }[];
-          pageInfo: { hasNextPage: boolean; endCursor: string | null };
-        };
-      }[];
-    };
-  };
-}
-
 const PACKAGE_DETAILS_QUERY = `
 query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endCursor: String) {
   organization(login: $organization) {
@@ -99,28 +86,29 @@ query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endC
   }
 }`;
 
-const PACKAGE_VERSIONS_QUERY = `
-query($organization: String!, $packageName: String!, $pageSize: Int!, $endCursor: String) {
-  organization(login: $organization) {
-    packages(first: 1, names: [$packageName]) {
-      nodes {
-        versions(first: $pageSize, after: $endCursor) {
-          nodes {
-            files(first: 100) {  
-              nodes {
-                size
-              }
-            }
-          }
-          pageInfo {
-            hasNextPage
-            endCursor
-          }
-        }
-      }
-    }
-  }
-}`;
+// const PACKAGE_VERSIONS_QUERY = `
+// query($organization: String!, $packageName: String!, $pageSize: Int!, $endCursor: String) {
+//   organization(login: $organization) {
+//     packages(first: 1, names: [$packageName]) {
+//       nodes {
+//         versions(first: $pageSize, after: $endCursor) {
+//           nodes {
+//             files(first: 100) {
+//               nodes {
+//                 size
+//               }
+//               totalCount
+//             }
+//           }
+//           pageInfo {
+//             hasNextPage
+//             endCursor
+//           }
+//         }
+//       }
+//     }
+//   }
+// }`;
 
 async function* getOrgPackageDetails(
   octokit: Octokit,
@@ -177,83 +165,6 @@ async function* getOrgPackageDetails(
   }
 }
 
-async function getTotalPackageVersionsSize(
-  octokit: Octokit,
-  organization: string,
-  packageName: string,
-  logger: any,
-  pageSize: number = 100,
-  endCursor: string | null = null,
-): Promise<number> {
-  let totalFetched = 0;
-  let pageCount = 0;
-  let hasNextPage = true;
-  let currentCursor = endCursor;
-  let totalSize = 0;
-
-  while (hasNextPage) {
-    pageCount++;
-    logger.info(
-      `Fetching page ${pageCount} with cursor: ${currentCursor || 'initial'}`,
-    );
-
-    try {
-      const response = await octokit.graphql<PackageVersionsResponse>(
-        PACKAGE_VERSIONS_QUERY,
-        {
-          organization,
-          packageName,
-          pageSize,
-          endCursor: currentCursor,
-        },
-      );
-
-      if (!response.organization || !response.organization.packages.nodes[0]) {
-        logger.error(
-          `GraphQL response is missing expected data. Response: ${JSON.stringify(response)}`,
-        );
-        break; // Exit loop if data is missing
-      }
-
-      const versions =
-        response.organization.packages.nodes[0].versions.nodes || [];
-      const pageInfo =
-        response.organization.packages.nodes[0].versions.pageInfo;
-
-      if (!versions || versions.length === 0) {
-        logger.warn(`No versions found for package: ${packageName}`);
-        break; // Exit loop if no versions are found
-      }
-
-      totalFetched += versions.length;
-
-      // Sum up file sizes from all versions
-      for (const version of versions) {
-        if (version.files && version.files.nodes) {
-          for (const file of version.files.nodes) {
-            totalSize += file.size || 0;
-          }
-        }
-      }
-
-      hasNextPage = pageInfo.hasNextPage;
-      currentCursor = pageInfo.endCursor;
-
-      if (!hasNextPage) {
-        logger.info(
-          `Reached final page. Total versions fetched: ${totalFetched}`,
-        );
-      }
-    } catch (error) {
-      logger.error(
-        `Error fetching package versions for ${packageName}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      break; // Exit loop on error
-    }
-  }
-  return totalSize;
-}
-
 const getPackageDetailsCommand = createBaseCommand({
   name: 'get-package-details',
   description: 'Get packages in a repository',
@@ -296,23 +207,13 @@ const getPackageDetailsCommand = createBaseCommand({
         logger,
         opts.pageSize,
       )) {
-        const totalSize =
-          pkg.versions.totalCount > 0
-            ? await getTotalPackageVersionsSize(
-                octokit,
-                organization,
-                pkg.name,
-                logger,
-                opts.pageSize,
-              )
-            : 0;
+        if (pkg.name.startsWith('deleted_') && pkg.versions.totalCount === 0) {
+          logger.info(`Skipping package ${pkg.name} because it is deleted`);
+          continue;
+        }
 
-        const csvRow = packageToCSVRow(pkg, totalSize);
+        const csvRow = packageToCSVRow(pkg);
         fs.appendFileSync(csvOutput, csvRow + '\n');
-
-        logger.info(
-          `Total size of all versions for package ${pkg.name}: ${totalSize} bytes`,
-        );
 
         packageCount++;
         if (packageCount % 100 === 0) {
@@ -332,7 +233,7 @@ const getPackageDetailsCommand = createBaseCommand({
     });
   });
 
-function packageToCSVRow(pkg: PackageDetail, totalSize: number): string {
+function packageToCSVRow(pkg: PackageDetail): string {
   const repoName = pkg.repository ? pkg.repository.name : 'N/A';
   const isArchived = pkg.repository ? pkg.repository.isArchived : false;
   const downloads = pkg.statistics ? pkg.statistics.downloadsTotalCount : 0;
@@ -350,6 +251,7 @@ function packageToCSVRow(pkg: PackageDetail, totalSize: number): string {
   const fileSize = fileInfo ? fileInfo.size : 'N/A';
   const updatedAt = fileInfo ? fileInfo.updatedAt : 'N/A';
   const totalVersions = pkg.versions ? pkg.versions.totalCount : 0;
+  const totalSize = fileSize != 'N/A' ? fileSize * totalVersions : 0;
 
   return [
     pkg.name,
@@ -357,28 +259,32 @@ function packageToCSVRow(pkg: PackageDetail, totalSize: number): string {
     repoName,
     isArchived,
     downloads,
+    updatedAt,
+    totalVersions,
     version,
     fileName,
     fileSize,
-    updatedAt,
-    totalVersions,
+    fileSize != 'N/A' ? filesize(fileSize) : 0,
+    totalSize,
     filesize(totalSize),
   ].join(',');
 }
 
 function getCSVHeaders(): string {
   return [
-    'Name',
+    'Package Name',
     'Package Type',
     'Repository',
-    'Is Archived',
+    'Repository Archived',
     'Downloads Count',
+    'Last Published',
+    'Total Versions',
     'Latest Version',
     'Latest File',
     'File Size (bytes)',
-    'Last Updated',
-    'Total Versions',
-    'Total Size',
+    'File Size',
+    'Total Size (bytes/estimated)',
+    'Total Size (estimated)',
   ].join(',');
 }
 
