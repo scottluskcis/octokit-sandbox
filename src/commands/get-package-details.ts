@@ -56,9 +56,14 @@ interface PackageVersionFile {
 }
 
 interface PackageVersionNode {
+  id: string;
   files: {
     nodes: PackageVersionFile[];
     totalCount: number;
+    pageInfo: {
+      hasNextPage: boolean;
+      endCursor: string | null;
+    };
   };
 }
 
@@ -76,6 +81,19 @@ interface PackageVersionsResponse {
           };
         },
       ];
+    };
+  };
+}
+
+// Interface for file response from PACKAGE_VERSION_FILES_QUERY
+interface PackageVersionFilesResponse {
+  node: {
+    files: {
+      nodes: PackageVersionFile[];
+      pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+      };
     };
   };
 }
@@ -124,17 +142,39 @@ query($organization: String!, $packageName: String!, $pageSize: Int!, $endCursor
       nodes {
         versions(first: $pageSize, after: $endCursor) {
           nodes {
+            id
             files(first: 100) {
               nodes {
                 size
               }
               totalCount
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
             }
           }
           pageInfo {
             hasNextPage
             endCursor
           }
+        }
+      }
+    }
+  }
+}`;
+
+const PACKAGE_VERSION_FILES_QUERY = `
+query($versionId: ID!, $pageSize: Int!, $endCursor: String) {
+  node(id: $versionId) {
+    ... on PackageVersion {
+      files(first: $pageSize, after: $endCursor) {
+        nodes {
+          size
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
         }
       }
     }
@@ -233,22 +273,56 @@ async function getPackageVersionDetails(
     totalVersions += versions.length;
     const pageInfo = packageNode.versions.pageInfo;
 
+    // Process each version
     for (const version of versions) {
+      const versionId = version.id;
       totalFiles += version.files.totalCount;
 
-      // Sum file sizes
+      // Add sizes from first page of files
       for (const file of version.files.nodes) {
         totalSize += file.size;
       }
 
-      // If there are more files than we fetched in the first page,
-      // we need to fetch the rest of them for this version
+      // Check if we need to fetch additional file pages
       if (version.files.totalCount > version.files.nodes.length) {
         logger.debug(
-          `Package ${packageName} has ${version.files.totalCount} files, fetching all of them`,
+          `Package ${packageName} has ${version.files.totalCount} files, fetching all pages`,
         );
-        // Handle pagination for files if needed
-        // This would require additional logic to fetch all files
+
+        let fileHasNextPage = version.files.pageInfo.hasNextPage;
+        let fileCurrentCursor = version.files.pageInfo.endCursor;
+        let filePageCount = 1;
+
+        // Continue fetching file pages until we've got them all
+        while (fileHasNextPage) {
+          filePageCount++;
+          logger.debug(
+            `Fetching file page ${filePageCount} for version ${versionId} with cursor: ${fileCurrentCursor}`,
+          );
+
+          const fileResponse =
+            await octokit.graphql<PackageVersionFilesResponse>(
+              PACKAGE_VERSION_FILES_QUERY,
+              {
+                versionId,
+                pageSize: 100,
+                endCursor: fileCurrentCursor,
+              },
+            );
+
+          // Add sizes from additional file pages
+          const fileNodes = fileResponse.node.files.nodes;
+          for (const file of fileNodes) {
+            totalSize += file.size;
+          }
+
+          fileHasNextPage = fileResponse.node.files.pageInfo.hasNextPage;
+          fileCurrentCursor = fileResponse.node.files.pageInfo.endCursor;
+
+          logger.debug(
+            `Retrieved ${fileNodes.length} more files for version ${versionId}`,
+          );
+        }
       }
     }
 
