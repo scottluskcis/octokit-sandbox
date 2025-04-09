@@ -65,7 +65,7 @@ query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endC
           downloadsTotalCount 
         }
         latestVersion { 
-          files(last: 1, orderBy: {field: CREATED_AT, direction: ASC}) {
+          files(last: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
             nodes {
               name
               size
@@ -239,17 +239,19 @@ function packageToCSVRow(pkg: PackageDetail): string {
   const downloads = pkg.statistics ? pkg.statistics.downloadsTotalCount : 0;
   const version = pkg.latestVersion ? pkg.latestVersion.version : 'N/A';
 
-  const fileInfo =
+  const allFiles =
     pkg.latestVersion &&
     pkg.latestVersion.files &&
-    pkg.latestVersion.files.nodes &&
-    pkg.latestVersion.files.nodes.length > 0
-      ? pkg.latestVersion.files.nodes[0]
-      : null;
+    pkg.latestVersion.files.nodes
+      ? pkg.latestVersion.files.nodes
+      : [];
 
-  const fileName = fileInfo ? fileInfo.name : 'N/A';
-  const fileSize = fileInfo ? fileInfo.size : 'N/A';
-  const updatedAt = fileInfo ? fileInfo.updatedAt : 'N/A';
+  const assetCount = allFiles.length;
+  const fileSize =
+    allFiles.length > 0
+      ? allFiles.reduce((sum, file) => sum + file.size, 0)
+      : 'N/A';
+  const updatedAt = allFiles.length > 0 ? allFiles[0].updatedAt : 'N/A';
   const totalVersions = pkg.versions ? pkg.versions.totalCount : 0;
   const totalSize = fileSize != 'N/A' ? fileSize * totalVersions : 0;
 
@@ -262,7 +264,7 @@ function packageToCSVRow(pkg: PackageDetail): string {
     updatedAt,
     totalVersions,
     version,
-    fileName,
+    assetCount,
     fileSize,
     fileSize != 'N/A' ? filesize(fileSize) : 0,
     totalSize,
@@ -280,7 +282,7 @@ function getCSVHeaders(): string {
     'Last Published',
     'Total Versions',
     'Latest Version',
-    'Latest File',
+    'Asset Count',
     'File Size (bytes)',
     'File Size',
     'Total Size (bytes/estimated)',
