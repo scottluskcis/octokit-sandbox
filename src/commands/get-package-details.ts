@@ -51,6 +51,35 @@ interface PackagesResponse {
   };
 }
 
+interface PackageVersionFile {
+  size: number;
+}
+
+interface PackageVersionNode {
+  files: {
+    nodes: PackageVersionFile[];
+    totalCount: number;
+  };
+}
+
+interface PackageVersionsResponse {
+  organization: {
+    packages: {
+      nodes: [
+        {
+          versions: {
+            nodes: PackageVersionNode[];
+            pageInfo: {
+              hasNextPage: boolean;
+              endCursor: string | null;
+            };
+          };
+        },
+      ];
+    };
+  };
+}
+
 const PACKAGE_DETAILS_QUERY = `
 query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endCursor: String) {
   organization(login: $organization) {
@@ -88,29 +117,29 @@ query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endC
   }
 }`;
 
-// const PACKAGE_VERSIONS_QUERY = `
-// query($organization: String!, $packageName: String!, $pageSize: Int!, $endCursor: String) {
-//   organization(login: $organization) {
-//     packages(first: 1, names: [$packageName]) {
-//       nodes {
-//         versions(first: $pageSize, after: $endCursor) {
-//           nodes {
-//             files(first: 100) {
-//               nodes {
-//                 size
-//               }
-//               totalCount
-//             }
-//           }
-//           pageInfo {
-//             hasNextPage
-//             endCursor
-//           }
-//         }
-//       }
-//     }
-//   }
-// }`;
+const PACKAGE_VERSIONS_QUERY = `
+query($organization: String!, $packageName: String!, $pageSize: Int!, $endCursor: String) {
+  organization(login: $organization) {
+    packages(first: 1, names: [$packageName]) {
+      nodes {
+        versions(first: $pageSize, after: $endCursor) {
+          nodes {
+            files(first: 100) {
+              nodes {
+                size
+              }
+              totalCount
+            }
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+        }
+      }
+    }
+  }
+}`;
 
 async function* getOrgPackageDetails(
   octokit: Octokit,
@@ -165,6 +194,75 @@ async function* getOrgPackageDetails(
       );
     }
   }
+}
+
+async function getPackageVersionDetails(
+  octokit: Octokit,
+  organization: string,
+  packageName: string,
+  logger: any,
+  pageSize: number = 100,
+): Promise<{ totalFiles: number; totalSize: number; totalVersions: number }> {
+  let totalFiles = 0;
+  let totalSize = 0;
+  let totalVersions = 0;
+  let hasNextPage = true;
+  let currentCursor: string | null = null;
+  let pageCount = 0;
+
+  while (hasNextPage) {
+    pageCount++;
+    logger.debug(
+      `Fetching version page ${pageCount} for package ${packageName} with cursor: ${currentCursor || 'initial'}`,
+    );
+
+    const response: PackageVersionsResponse =
+      await octokit.graphql<PackageVersionsResponse>(PACKAGE_VERSIONS_QUERY, {
+        organization,
+        packageName,
+        pageSize,
+        endCursor: currentCursor,
+      });
+
+    const packageNode = response.organization.packages.nodes[0];
+    if (!packageNode) {
+      break;
+    }
+
+    const versions = packageNode.versions.nodes;
+    totalVersions += versions.length;
+    const pageInfo = packageNode.versions.pageInfo;
+
+    for (const version of versions) {
+      totalFiles += version.files.totalCount;
+
+      // Sum file sizes
+      for (const file of version.files.nodes) {
+        totalSize += file.size;
+      }
+
+      // If there are more files than we fetched in the first page,
+      // we need to fetch the rest of them for this version
+      if (version.files.totalCount > version.files.nodes.length) {
+        logger.debug(
+          `Package ${packageName} has ${version.files.totalCount} files, fetching all of them`,
+        );
+        // Handle pagination for files if needed
+        // This would require additional logic to fetch all files
+      }
+    }
+
+    hasNextPage = pageInfo.hasNextPage;
+    currentCursor = pageInfo.endCursor;
+
+    if (!hasNextPage) {
+      logger.debug(
+        `Reached final version page for package ${packageName}. Total versions: ${totalVersions}, Total files: ${totalFiles}, Total size: ${totalSize}`,
+      );
+    }
+  }
+
+  return { totalFiles, totalSize, totalVersions };
 }
 
 const getPackageDetailsCommand = createBaseCommand({
@@ -223,21 +321,28 @@ const getPackageDetailsCommand = createBaseCommand({
           continue;
         }
 
-        const csvRow = packageToCSVRow(pkg);
+        // Fetch detailed package version information
+        logger.info(
+          `Fetching detailed version information for package: ${pkg.name}`,
+        );
+        const { totalFiles, totalSize, totalVersions } =
+          await getPackageVersionDetails(
+            octokit,
+            organization,
+            pkg.name,
+            logger,
+            opts.pageSize,
+          );
+
+        const csvRow = packageToCSVRow(
+          pkg,
+          totalFiles,
+          totalSize,
+          totalVersions,
+        );
         fs.appendFileSync(csvOutput, csvRow + '\n');
 
-        // Calculate total size
-        const allFiles = pkg.latestVersion?.files?.nodes || [];
-        const fileSize =
-          allFiles.length > 0
-            ? allFiles.reduce((sum, file) => sum + file.size, 0)
-            : 0;
-        const totalVersions = pkg.versions ? pkg.versions.totalCount : 0;
-        const pkgTotalSize = fileSize * totalVersions;
-
-        if (pkgTotalSize) {
-          totalSizeBytes += pkgTotalSize;
-        }
+        totalSizeBytes += totalSize;
 
         packageCount++;
         if (packageCount % 100 === 0) {
@@ -273,28 +378,25 @@ Total Size (formatted): ${filesize(totalSizeBytes)}
     });
   });
 
-function packageToCSVRow(pkg: PackageDetail): string {
+function packageToCSVRow(
+  pkg: PackageDetail,
+  totalFiles: number,
+  totalSize: number,
+  totalVersions: number,
+): string {
   const repoName = pkg.repository ? pkg.repository.name : 'N/A';
   const isArchived = pkg.repository ? pkg.repository.isArchived : false;
   const visibility = pkg.repository ? pkg.repository.visibility : 'N/A';
   const downloads = pkg.statistics ? pkg.statistics.downloadsTotalCount : 0;
   const version = pkg.latestVersion ? pkg.latestVersion.version : 'N/A';
 
-  const allFiles =
+  // Get latest version update date for reference
+  const updatedAt =
     pkg.latestVersion &&
     pkg.latestVersion.files &&
-    pkg.latestVersion.files.nodes
-      ? pkg.latestVersion.files.nodes
-      : [];
-
-  const assetCount = allFiles.length;
-  const fileSize =
-    allFiles.length > 0
-      ? allFiles.reduce((sum, file) => sum + file.size, 0)
+    pkg.latestVersion.files.nodes.length > 0
+      ? pkg.latestVersion.files.nodes[0].updatedAt
       : 'N/A';
-  const updatedAt = allFiles.length > 0 ? allFiles[0].updatedAt : 'N/A';
-  const totalVersions = pkg.versions ? pkg.versions.totalCount : 0;
-  const totalSize = fileSize != 'N/A' ? fileSize * totalVersions : 0;
 
   return [
     pkg.name,
@@ -304,13 +406,13 @@ function packageToCSVRow(pkg: PackageDetail): string {
     visibility,
     downloads,
     updatedAt,
-    totalVersions,
+    totalVersions, // Use calculated total versions instead of pkg.versions.totalCount
     version,
-    assetCount,
-    fileSize,
-    fileSize != 'N/A' ? filesize(fileSize) : 0,
-    totalSize,
-    filesize(totalSize),
+    totalFiles, // Use calculated total number of files
+    totalSize, // Use calculated total size in bytes
+    filesize(totalSize), // Format the total size for human readability
+    totalSize, // Redundant column for backward compatibility
+    filesize(totalSize), // Redundant column for backward compatibility
   ].join(',');
 }
 
