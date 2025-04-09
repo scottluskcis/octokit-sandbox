@@ -464,13 +464,19 @@ function packageToCSVRow(
   const downloads = pkg.statistics ? pkg.statistics.downloadsTotalCount : 0;
   const version = pkg.latestVersion ? pkg.latestVersion.version : 'N/A';
 
-  // Get latest version update date for reference
   const updatedAt =
     pkg.latestVersion &&
     pkg.latestVersion.files &&
     pkg.latestVersion.files.nodes.length > 0
       ? pkg.latestVersion.files.nodes[0].updatedAt
       : 'N/A';
+
+  const latestVersionSize =
+    pkg.latestVersion &&
+    pkg.latestVersion.files &&
+    pkg.latestVersion.files.nodes.length > 0
+      ? pkg.latestVersion.files.nodes[0].size
+      : 0;
 
   return [
     pkg.name,
@@ -480,13 +486,13 @@ function packageToCSVRow(
     visibility,
     downloads,
     updatedAt,
-    totalVersions, // Use calculated total versions instead of pkg.versions.totalCount
     version,
-    totalFiles, // Use calculated total number of files
-    totalSize, // Use calculated total size in bytes
-    filesize(totalSize), // Format the total size for human readability
-    totalSize, // Redundant column for backward compatibility
-    filesize(totalSize), // Redundant column for backward compatibility
+    latestVersionSize,
+    filesize(latestVersionSize),
+    totalVersions,
+    totalFiles,
+    totalSize,
+    filesize(totalSize),
   ].join(',');
 }
 
@@ -499,13 +505,13 @@ function getCSVHeaders(): string {
     'Repo Visibility',
     'Downloads Count',
     'Last Published',
-    'Total Versions',
     'Latest Version',
-    'Asset Count',
-    'File Size (bytes)',
-    'File Size',
-    'Total Size (bytes/estimated)',
-    'Total Size (estimated)',
+    'Latest Version File Size (bytes)',
+    'Latest Version File Size',
+    'Total All Versions',
+    'Total All Asset Count',
+    'Total All Size (bytes)',
+    'Total All Size',
   ].join(',');
 }
 
