@@ -1,9 +1,0 @@
-Summary Report
-=============
-Date: 2025-04-09
-Organization: department-of-veterans-affairs
-Total Packages Written to CSV: 1485
-Total Packages Skipped (deleted): 223
-Total Size (bytes): 1082700297386
-Total Size (formatted): 1.08 TB
-        

@@ -36,3 +36,5 @@ coverage/
 
 *.csv
 *.xlsx
+
+package-summary.txt
