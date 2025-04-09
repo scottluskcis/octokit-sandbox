@@ -186,6 +186,11 @@ const getPackageDetailsCommand = createBaseCommand({
     'Path to write CSV output file',
     './package-details.csv',
   )
+  .option(
+    '--summary-output <summaryOutput>',
+    'Path to write summary output file',
+    './package-summary.txt',
+  )
   .action(async (options) => {
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
       logger.info('Starting get package details...');
@@ -193,6 +198,7 @@ const getPackageDetailsCommand = createBaseCommand({
       const organization = opts.orgName;
       const packageType = options.packageType.toUpperCase();
       const csvOutput = path.resolve(options.csvOutput);
+      const summaryOutput = path.resolve(options.summaryOutput);
 
       logger.info(`Fetching packages for organization: ${organization}`);
       logger.info(`Package type: ${packageType}`);
@@ -201,6 +207,8 @@ const getPackageDetailsCommand = createBaseCommand({
       logger.info(`Created CSV file with headers at ${csvOutput}`);
 
       let packageCount = 0;
+      let skippedCount = 0;
+      let totalSizeBytes = 0;
 
       for await (const pkg of getOrgPackageDetails(
         octokit,
@@ -211,11 +219,25 @@ const getPackageDetailsCommand = createBaseCommand({
       )) {
         if (pkg.name.startsWith('deleted_') && pkg.versions.totalCount === 0) {
           logger.info(`Skipping package ${pkg.name} because it is deleted`);
+          skippedCount++;
           continue;
         }
 
         const csvRow = packageToCSVRow(pkg);
         fs.appendFileSync(csvOutput, csvRow + '\n');
+
+        // Calculate total size
+        const allFiles = pkg.latestVersion?.files?.nodes || [];
+        const fileSize =
+          allFiles.length > 0
+            ? allFiles.reduce((sum, file) => sum + file.size, 0)
+            : 0;
+        const totalVersions = pkg.versions ? pkg.versions.totalCount : 0;
+        const pkgTotalSize = fileSize * totalVersions;
+
+        if (pkgTotalSize) {
+          totalSizeBytes += pkgTotalSize;
+        }
 
         packageCount++;
         if (packageCount % 100 === 0) {
@@ -232,6 +254,22 @@ const getPackageDetailsCommand = createBaseCommand({
       } else {
         logger.info(`CSV data written incrementally to ${csvOutput}`);
       }
+
+      // Create and write summary report
+      const currentDate = new Date().toISOString().split('T')[0];
+
+      const summaryContent = `Summary Report
+=============
+Date: ${currentDate}
+Organization: ${organization}
+Total Packages Written to CSV: ${packageCount}
+Total Packages Skipped (deleted): ${skippedCount}
+Total Size (bytes): ${totalSizeBytes}
+Total Size (formatted): ${filesize(totalSizeBytes)}
+`;
+
+      fs.writeFileSync(summaryOutput, summaryContent);
+      logger.info(`Summary report written to ${summaryOutput}`);
     });
   });
 
