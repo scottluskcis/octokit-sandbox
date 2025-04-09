@@ -28,6 +28,7 @@ interface PackageDetail {
   repository: {
     name: string;
     isArchived: boolean;
+    visibility: string;
   } | null;
   statistics: {
     downloadsTotalCount: number;
@@ -60,6 +61,7 @@ query($organization: String!, $packageType: PackageType!, $pageSize: Int!, $endC
         repository {
           name
           isArchived
+          visibility
         }
         statistics {
           downloadsTotalCount 
@@ -236,6 +238,7 @@ const getPackageDetailsCommand = createBaseCommand({
 function packageToCSVRow(pkg: PackageDetail): string {
   const repoName = pkg.repository ? pkg.repository.name : 'N/A';
   const isArchived = pkg.repository ? pkg.repository.isArchived : false;
+  const visibility = pkg.repository ? pkg.repository.visibility : 'N/A';
   const downloads = pkg.statistics ? pkg.statistics.downloadsTotalCount : 0;
   const version = pkg.latestVersion ? pkg.latestVersion.version : 'N/A';
 
@@ -260,6 +263,7 @@ function packageToCSVRow(pkg: PackageDetail): string {
     pkg.packageType,
     repoName,
     isArchived,
+    visibility,
     downloads,
     updatedAt,
     totalVersions,
@@ -276,8 +280,9 @@ function getCSVHeaders(): string {
   return [
     'Package Name',
     'Package Type',
-    'Repository',
-    'Repository Archived',
+    'Repo Name',
+    'Repo Archived',
+    'Repo Visibility',
     'Downloads Count',
     'Last Published',
     'Total Versions',
