@@ -367,6 +367,9 @@ const getPackageDetailsCommand = createBaseCommand({
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
       logger.info('Starting get package details...');
 
+      const startTime = new Date();
+      const startTimeFormatted = startTime.toISOString();
+
       const organization = opts.orgName;
       const packageType = options.packageType.toUpperCase();
       const csvOutput = path.resolve(options.csvOutput);
@@ -435,11 +438,19 @@ const getPackageDetailsCommand = createBaseCommand({
       }
 
       // Create and write summary report
+      const endTime = new Date();
+      const endTimeFormatted = endTime.toISOString();
+      const elapsedTimeMs = endTime.getTime() - startTime.getTime();
+      const elapsedTimeFormatted = formatElapsedTime(elapsedTimeMs);
+
       const currentDate = new Date().toISOString().split('T')[0];
 
       const summaryContent = `Summary Report
 =============
 Date: ${currentDate}
+Start Time: ${startTimeFormatted}
+End Time: ${endTimeFormatted}
+Elapsed Time: ${elapsedTimeFormatted}
 Organization: ${organization}
 Total Packages Written to CSV: ${packageCount}
 Total Packages Skipped (deleted): ${skippedCount}
@@ -475,7 +486,7 @@ function packageToCSVRow(
     pkg.latestVersion &&
     pkg.latestVersion.files &&
     pkg.latestVersion.files.nodes.length > 0
-      ? pkg.latestVersion.files.nodes[0].size
+      ? pkg.latestVersion.files.nodes.reduce((sum, file) => sum + file.size, 0)
       : 0;
 
   return [
@@ -513,6 +524,14 @@ function getCSVHeaders(): string {
     'Total All Size (bytes)',
     'Total All Size',
   ].join(',');
+}
+
+function formatElapsedTime(elapsedTimeMs: number): string {
+  const seconds = Math.floor((elapsedTimeMs / 1000) % 60);
+  const minutes = Math.floor((elapsedTimeMs / (1000 * 60)) % 60);
+  const hours = Math.floor((elapsedTimeMs / (1000 * 60 * 60)) % 24);
+
+  return `${hours}h ${minutes}m ${seconds}s`;
 }
 
 export default getPackageDetailsCommand;
