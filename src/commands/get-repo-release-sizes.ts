@@ -14,11 +14,6 @@ const getRepoReleaseSizesCommand = createBaseCommand({
     'Warning threshold for release assets size in bytes',
     '5000000000',
   ) // 5GB default
-  .option(
-    '--repo-list <path>',
-    'Path to CSV file containing repository names',
-    './repositories.csv',
-  )
   .action(async (options) => {
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
       logger.info('Starting get releases sizes...');
