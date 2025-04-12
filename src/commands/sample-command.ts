@@ -4,8 +4,8 @@ import {
 } from '@scottluskcis/octokit-harness';
 
 const sampleCommand = createBaseCommand({
-  name: 'find-packages',
-  description: 'Find packages in a repository',
+  name: 'sample-command',
+  description: 'Description of the sample command',
 }).action(async (options) => {
   await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
     logger.info('Starting...');
