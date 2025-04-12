@@ -3,8 +3,7 @@ import {
   executeWithOctokit,
 } from '@scottluskcis/octokit-harness';
 import { filesize } from 'filesize';
-import { readFileSync } from 'fs';
-import { parse } from 'csv-parse/sync';
+import { readRepositoryNames } from '../utils.js';
 
 const getRepoReleaseSizesCommand = createBaseCommand({
   name: 'get-repo-release-sizes',
@@ -15,6 +14,11 @@ const getRepoReleaseSizesCommand = createBaseCommand({
     'Warning threshold for release assets size in bytes',
     '5000000000',
   ) // 5GB default
+  .option(
+    '--repo-list <path>',
+    'Path to CSV file containing repository names',
+    './repositories.csv',
+  )
   .action(async (options) => {
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
       logger.info('Starting get releases sizes...');
@@ -23,32 +27,9 @@ const getRepoReleaseSizesCommand = createBaseCommand({
         options.threshold,
         10,
       );
-      const repoListFile = options.repoList;
-      let repoNames: string[] = [];
 
-      try {
-        const fileContent = readFileSync(repoListFile, 'utf-8');
-        const records = parse(fileContent, {
-          trim: true,
-          skip_empty_lines: true,
-          columns: false,
-        });
-
-        // Extract repo names from CSV (first column only)
-        repoNames = records.map((record: any[]) => record[0]);
-
-        if (repoNames.length === 0) {
-          throw new Error('No repository names found in CSV file');
-        }
-      } catch (error) {
-        logger.error(
-          `Error reading repository list from ${repoListFile}:`,
-          error,
-        );
-        return;
-      }
-
-      logger.info(`Found ${repoNames.length} repositories to process`);
+      // Read repository names using the utility function
+      const repoNames = readRepositoryNames(options.repoList, logger);
 
       // Create an array to track repository sizes
       interface RepoSizeInfo {
