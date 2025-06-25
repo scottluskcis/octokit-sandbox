@@ -53,6 +53,8 @@ const listWebhooksCommand = createBaseCommand({
       logger.info('Starting repository webhook listing...');
 
       const webhooks: WebhookData[] = [];
+      const uniqueBaseUrls = new Set<string>();
+      const uniqueUrlsWithoutQuery = new Set<string>();
 
       // Get repository webhooks
       logger.info('Fetching repository webhooks...');
@@ -105,6 +107,29 @@ const listWebhooksCommand = createBaseCommand({
                     `Skipping inactive webhook: ${webhook.name} (${webhook.id}) in ${repo.name} with status ${webhook.last_response?.status}`,
                   );
                   continue;
+                }
+
+                // parse URL parts and keep a unique base URL if requested
+                if (
+                  options.onlyUniqueBaseUrls === true &&
+                  webhook.config?.url
+                ) {
+                  const url = new URL(webhook.config.url);
+                  const baseUrl = `${url.protocol}//${url.host}`;
+                }
+
+                // Collect unique URLs for separate outputs
+                if (webhook.config?.url && webhook.config.url !== 'N/A') {
+                  try {
+                    const url = new URL(webhook.config.url);
+                    const baseUrl = `${url.protocol}//${url.host}`;
+                    const urlWithoutQuery = `${url.protocol}//${url.host}${url.pathname}`;
+
+                    uniqueBaseUrls.add(baseUrl);
+                    uniqueUrlsWithoutQuery.add(urlWithoutQuery);
+                  } catch (error) {
+                    logger.warn(`Invalid URL format: ${webhook.config.url}`);
+                  }
                 }
 
                 webhooks.push({
@@ -194,6 +219,37 @@ const listWebhooksCommand = createBaseCommand({
 
         logger.info(`Exported ${webhooks.length} webhooks to ${csvFilename}`);
 
+        // Generate unique base URLs output
+        if (uniqueBaseUrls.size > 0) {
+          const baseUrlsFilename = csvFilename.replace(
+            '.csv',
+            '-unique-base-urls.txt',
+          );
+          const sortedBaseUrls = Array.from(uniqueBaseUrls).sort();
+          fs.writeFileSync(baseUrlsFilename, sortedBaseUrls.join('\n') + '\n');
+          logger.info(
+            `Exported ${uniqueBaseUrls.size} unique base URLs to ${baseUrlsFilename}`,
+          );
+        }
+
+        // Generate unique URLs without query strings output
+        if (uniqueUrlsWithoutQuery.size > 0) {
+          const urlsWithoutQueryFilename = csvFilename.replace(
+            '.csv',
+            '-unique-urls-no-query.txt',
+          );
+          const sortedUrlsWithoutQuery = Array.from(
+            uniqueUrlsWithoutQuery,
+          ).sort();
+          fs.writeFileSync(
+            urlsWithoutQueryFilename,
+            sortedUrlsWithoutQuery.join('\n') + '\n',
+          );
+          logger.info(
+            `Exported ${uniqueUrlsWithoutQuery.size} unique URLs (without query strings) to ${urlsWithoutQueryFilename}`,
+          );
+        }
+
         // Summary statistics
         const activeWebhooks = webhooks.filter((w) => w.active);
 
@@ -204,6 +260,10 @@ const listWebhooksCommand = createBaseCommand({
           `Inactive webhooks: ${webhooks.length - activeWebhooks.length}`,
         );
         logger.info(`Total repositories processed: ${processedRepos}`);
+        logger.info(`Unique base URLs found: ${uniqueBaseUrls.size}`);
+        logger.info(
+          `Unique URLs (without query) found: ${uniqueUrlsWithoutQuery.size}`,
+        );
       } else {
         logger.info('No repository webhooks found in the organization');
       }
