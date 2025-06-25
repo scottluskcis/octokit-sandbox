@@ -33,11 +33,28 @@ const listWebhooksCommand = createBaseCommand({
     'Path to write CSV output file',
     './repo-webhooks.csv',
   )
+  .option(
+    '--only-active-repos',
+    'Only include active repositories in the check',
+    true,
+  )
+  .option(
+    '--only-active-webhooks',
+    'Only include active webhooks in the output',
+    true,
+  )
+  .option(
+    '--only-unique-base-urls',
+    'Only include unique base URLs in the webhook list',
+    true,
+  )
   .action(async (options) => {
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
       logger.info('Starting repository webhook listing...');
 
       const webhooks: WebhookData[] = [];
+      const uniqueBaseUrls = new Set<string>();
+      const uniqueUrlsWithoutQuery = new Set<string>();
 
       // Get repository webhooks
       logger.info('Fetching repository webhooks...');
@@ -59,6 +76,12 @@ const listWebhooksCommand = createBaseCommand({
         totalRepos += repos.length;
 
         for (const repo of repos) {
+          // Skip archived repositories if only active ones are requested
+          if (options.onlyActiveRepos === true && repo.archived === true) {
+            logger.info(`Skipping archived repository: ${repo.name}`);
+            continue;
+          }
+
           processedRepos++;
           logger.info(
             `Processing repository ${processedRepos}/${totalRepos}: ${repo.name}`,
@@ -76,6 +99,39 @@ const listWebhooksCommand = createBaseCommand({
 
             for await (const { data: repoWebhooks } of repoWebhooksIterator) {
               for (const webhook of repoWebhooks) {
+                if (
+                  options.onlyActiveWebhooks === true &&
+                  webhook.last_response?.status !== 'active'
+                ) {
+                  logger.info(
+                    `Skipping inactive webhook: ${webhook.name} (${webhook.id}) in ${repo.name} with status ${webhook.last_response?.status}`,
+                  );
+                  continue;
+                }
+
+                // parse URL parts and keep a unique base URL if requested
+                if (
+                  options.onlyUniqueBaseUrls === true &&
+                  webhook.config?.url
+                ) {
+                  const url = new URL(webhook.config.url);
+                  const baseUrl = `${url.protocol}//${url.host}`;
+                }
+
+                // Collect unique URLs for separate outputs
+                if (webhook.config?.url && webhook.config.url !== 'N/A') {
+                  try {
+                    const url = new URL(webhook.config.url);
+                    const baseUrl = `${url.protocol}//${url.host}`;
+                    const urlWithoutQuery = `${url.protocol}//${url.host}${url.pathname}`;
+
+                    uniqueBaseUrls.add(baseUrl);
+                    uniqueUrlsWithoutQuery.add(urlWithoutQuery);
+                  } catch (error) {
+                    logger.warn(`Invalid URL format: ${webhook.config.url}`);
+                  }
+                }
+
                 webhooks.push({
                   type: 'Repository',
                   organizationName: opts.orgName,
@@ -110,8 +166,8 @@ const listWebhooksCommand = createBaseCommand({
 
       // Write results to CSV
       if (webhooks.length > 0) {
-        const csvFilename = opts.csvOutput
-          ? path.resolve(process.cwd(), opts.csvOutput)
+        const csvFilename = options.csvOutput
+          ? path.resolve(process.cwd(), options.csvOutput)
           : path.join(
               process.cwd(),
               `webhooks-${opts.orgName}-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`,
@@ -163,6 +219,37 @@ const listWebhooksCommand = createBaseCommand({
 
         logger.info(`Exported ${webhooks.length} webhooks to ${csvFilename}`);
 
+        // Generate unique base URLs output
+        if (uniqueBaseUrls.size > 0) {
+          const baseUrlsFilename = csvFilename.replace(
+            '.csv',
+            '-unique-base-urls.txt',
+          );
+          const sortedBaseUrls = Array.from(uniqueBaseUrls).sort();
+          fs.writeFileSync(baseUrlsFilename, sortedBaseUrls.join('\n') + '\n');
+          logger.info(
+            `Exported ${uniqueBaseUrls.size} unique base URLs to ${baseUrlsFilename}`,
+          );
+        }
+
+        // Generate unique URLs without query strings output
+        if (uniqueUrlsWithoutQuery.size > 0) {
+          const urlsWithoutQueryFilename = csvFilename.replace(
+            '.csv',
+            '-unique-urls-no-query.txt',
+          );
+          const sortedUrlsWithoutQuery = Array.from(
+            uniqueUrlsWithoutQuery,
+          ).sort();
+          fs.writeFileSync(
+            urlsWithoutQueryFilename,
+            sortedUrlsWithoutQuery.join('\n') + '\n',
+          );
+          logger.info(
+            `Exported ${uniqueUrlsWithoutQuery.size} unique URLs (without query strings) to ${urlsWithoutQueryFilename}`,
+          );
+        }
+
         // Summary statistics
         const activeWebhooks = webhooks.filter((w) => w.active);
 
@@ -173,6 +260,10 @@ const listWebhooksCommand = createBaseCommand({
           `Inactive webhooks: ${webhooks.length - activeWebhooks.length}`,
         );
         logger.info(`Total repositories processed: ${processedRepos}`);
+        logger.info(`Unique base URLs found: ${uniqueBaseUrls.size}`);
+        logger.info(
+          `Unique URLs (without query) found: ${uniqueUrlsWithoutQuery.size}`,
+        );
       } else {
         logger.info('No repository webhooks found in the organization');
       }
