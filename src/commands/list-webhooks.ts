@@ -110,11 +110,12 @@ const listWebhooksCommand = createBaseCommand({
 
       // Write results to CSV
       if (webhooks.length > 0) {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const csvFilename = path.join(
-          process.cwd(),
-          `webhooks-${opts.orgName}-${timestamp}.csv`,
-        );
+        const csvFilename = opts.csvOutput
+          ? path.resolve(process.cwd(), opts.csvOutput)
+          : path.join(
+              process.cwd(),
+              `webhooks-${opts.orgName}-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`,
+            );
 
         // Write CSV header
         const csvHeaders = [
