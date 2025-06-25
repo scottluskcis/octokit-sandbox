@@ -109,36 +109,6 @@ const listWebhooksCommand = createBaseCommand({
                   continue;
                 }
 
-                // parse URL parts and keep a unique base URL if requested
-                if (
-                  options.onlyUniqueBaseUrls === true &&
-                  webhook.config?.url
-                ) {
-                  const url = new URL(webhook.config.url);
-                  const baseUrl = `${url.protocol}//${url.host}`;
-                  if (uniqueBaseUrls.has(baseUrl)) {
-                    logger.info(
-                      `Skipping webhook with duplicate base URL: ${baseUrl}`,
-                    );
-                    continue;
-                  }
-                  uniqueBaseUrls.add(baseUrl);
-                }
-
-                // Collect unique URLs for separate outputs
-                if (webhook.config?.url && webhook.config.url !== 'N/A') {
-                  try {
-                    const url = new URL(webhook.config.url);
-                    const baseUrl = `${url.protocol}//${url.host}`;
-                    const urlWithoutQuery = `${url.protocol}//${url.host}${url.pathname}`;
-
-                    uniqueBaseUrls.add(baseUrl);
-                    uniqueUrlsWithoutQuery.add(urlWithoutQuery);
-                  } catch (error) {
-                    logger.warn(`Invalid URL format: ${webhook.config.url}`);
-                  }
-                }
-
                 webhooks.push({
                   type: 'Repository',
                   organizationName: opts.orgName,
