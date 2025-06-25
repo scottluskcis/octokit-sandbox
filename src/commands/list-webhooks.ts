@@ -33,6 +33,21 @@ const listWebhooksCommand = createBaseCommand({
     'Path to write CSV output file',
     './repo-webhooks.csv',
   )
+  .option(
+    '--only-active-repos',
+    'Only include active repositories in the check',
+    true,
+  )
+  .option(
+    '--only-active-webhooks',
+    'Only include active webhooks in the output',
+    true,
+  )
+  .option(
+    '--only-unique-base-urls',
+    'Only include unique base URLs in the webhook list',
+    true,
+  )
   .action(async (options) => {
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
       logger.info('Starting repository webhook listing...');
@@ -59,6 +74,12 @@ const listWebhooksCommand = createBaseCommand({
         totalRepos += repos.length;
 
         for (const repo of repos) {
+          // Skip archived repositories if only active ones are requested
+          if (options.onlyActiveRepos === true && repo.archived === true) {
+            logger.info(`Skipping archived repository: ${repo.name}`);
+            continue;
+          }
+
           processedRepos++;
           logger.info(
             `Processing repository ${processedRepos}/${totalRepos}: ${repo.name}`,
@@ -76,6 +97,16 @@ const listWebhooksCommand = createBaseCommand({
 
             for await (const { data: repoWebhooks } of repoWebhooksIterator) {
               for (const webhook of repoWebhooks) {
+                if (
+                  options.onlyActiveWebhooks === true &&
+                  webhook.last_response?.status !== 'active'
+                ) {
+                  logger.info(
+                    `Skipping inactive webhook: ${webhook.name} (${webhook.id}) in ${repo.name} with status ${webhook.last_response?.status}`,
+                  );
+                  continue;
+                }
+
                 webhooks.push({
                   type: 'Repository',
                   organizationName: opts.orgName,
@@ -110,8 +141,8 @@ const listWebhooksCommand = createBaseCommand({
 
       // Write results to CSV
       if (webhooks.length > 0) {
-        const csvFilename = opts.csvOutput
-          ? path.resolve(process.cwd(), opts.csvOutput)
+        const csvFilename = options.csvOutput
+          ? path.resolve(process.cwd(), options.csvOutput)
           : path.join(
               process.cwd(),
               `webhooks-${opts.orgName}-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`,
