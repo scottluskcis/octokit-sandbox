@@ -229,11 +229,12 @@ function getCSVHeaders(): string {
 
 const codespacesUsageCommand = createBaseCommand({
   name: 'codespaces-usage',
-  description: 'Get codespaces usage for an organization',
+  description:
+    'Get codespaces usage for one or more organizations (comma-separated)',
 })
   .option(
     '--organization <organization>',
-    'The organization to get codespaces from',
+    'The organization(s) to get codespaces from (comma-separated for multiple)',
     'myorg',
   )
   .option(
@@ -250,53 +251,93 @@ const codespacesUsageCommand = createBaseCommand({
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
       logger.info('Starting codespaces usage collection...');
 
-      const organization = opts.orgName;
-      const csvOutput = path.resolve(options.csvOutput);
-
-      logger.info(`Fetching codespaces for organization: ${organization}`);
-
-      fs.writeFileSync(csvOutput, getCSVHeaders() + '\n');
-      logger.info(`Created CSV file with headers at ${csvOutput}`);
-
-      let repositoryCount = 0;
-      let totalCodespaces = 0;
-      let repositoriesWithCodespaces = 0;
-
-      for await (const repo of getCodespaceUsage(
-        octokit,
-        organization,
-        logger,
-        opts.pageSize,
-      )) {
-        const csvRows = repositoryToCSVRow(repo);
-
-        for (const row of csvRows) {
-          fs.appendFileSync(csvOutput, row + '\n');
-        }
-
-        totalCodespaces += repo.codespaces.totalCount;
-        if (repo.codespaces.totalCount > 0) {
-          repositoriesWithCodespaces++;
-        }
-
-        repositoryCount++;
-        if (repositoryCount % 100 === 0) {
-          logger.info(`Processed ${repositoryCount} repositories so far`);
-        }
-      }
-
-      logger.info(`Total repositories processed: ${repositoryCount}`);
+      // Parse comma-separated organization names
+      const organizations = opts.orgName
+        .split(',')
+        .map((org: string) => org.trim());
       logger.info(
-        `Repositories with codespaces: ${repositoriesWithCodespaces}`,
+        `Processing ${organizations.length} organization(s): ${organizations.join(', ')}`,
       );
-      logger.info(`Total codespaces found: ${totalCodespaces}`);
 
-      if (repositoryCount === 0) {
-        logger.info('No repositories found');
-      } else {
-        logger.info(`CSV data written to ${csvOutput}`);
+      // Create CSV output filename template
+      const baseCsvOutput = path.resolve(options.csvOutput);
+      const csvDir = path.dirname(baseCsvOutput);
+      const csvExt = path.extname(baseCsvOutput);
+      const csvBaseName = path.basename(baseCsvOutput, csvExt);
+
+      let totalRepositoryCount = 0;
+      let totalCodespacesCount = 0;
+      let totalRepositoriesWithCodespaces = 0;
+
+      for (const organization of organizations) {
+        logger.info(`\n=== Processing organization: ${organization} ===`);
+
+        // Create org-specific CSV filename
+        const orgCsvOutput = path.join(
+          csvDir,
+          `${csvBaseName}_${organization}${csvExt}`,
+        );
+
+        logger.info(`Fetching codespaces for organization: ${organization}`);
+
+        fs.writeFileSync(orgCsvOutput, getCSVHeaders() + '\n');
+        logger.info(`Created CSV file with headers at ${orgCsvOutput}`);
+
+        let repositoryCount = 0;
+        let totalCodespaces = 0;
+        let repositoriesWithCodespaces = 0;
+
+        for await (const repo of getCodespaceUsage(
+          octokit,
+          organization,
+          logger,
+          opts.pageSize,
+        )) {
+          const csvRows = repositoryToCSVRow(repo);
+
+          for (const row of csvRows) {
+            fs.appendFileSync(orgCsvOutput, row + '\n');
+          }
+
+          totalCodespaces += repo.codespaces.totalCount;
+          if (repo.codespaces.totalCount > 0) {
+            repositoriesWithCodespaces++;
+          }
+
+          repositoryCount++;
+          if (repositoryCount % 100 === 0) {
+            logger.info(
+              `Processed ${repositoryCount} repositories so far for ${organization}`,
+            );
+          }
+        }
+
+        logger.info(`Organization ${organization} summary:`);
+        logger.info(`  Repositories processed: ${repositoryCount}`);
+        logger.info(
+          `  Repositories with codespaces: ${repositoriesWithCodespaces}`,
+        );
+        logger.info(`  Total codespaces found: ${totalCodespaces}`);
+
+        if (repositoryCount === 0) {
+          logger.info(`  No repositories found for ${organization}`);
+        } else {
+          logger.info(`  CSV data written to ${orgCsvOutput}`);
+        }
+
+        // Add to totals
+        totalRepositoryCount += repositoryCount;
+        totalCodespacesCount += totalCodespaces;
+        totalRepositoriesWithCodespaces += repositoriesWithCodespaces;
       }
 
+      logger.info('\n=== Overall Summary ===');
+      logger.info(`Total organizations processed: ${organizations.length}`);
+      logger.info(`Total repositories processed: ${totalRepositoryCount}`);
+      logger.info(
+        `Total repositories with codespaces: ${totalRepositoriesWithCodespaces}`,
+      );
+      logger.info(`Total codespaces found: ${totalCodespacesCount}`);
       logger.info('Finished');
     });
   });

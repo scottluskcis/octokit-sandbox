@@ -341,7 +341,7 @@ async function getPackageVersionDetails(
 
 const getPackageDetailsCommand = createBaseCommand({
   name: 'get-package-details',
-  description: 'Get packages in a repository',
+  description: 'Get packages in one or more organizations (comma-separated)',
 })
   .option(
     '--package-type <packageType>',
@@ -350,7 +350,7 @@ const getPackageDetailsCommand = createBaseCommand({
   )
   .option(
     '--organization <organization>',
-    'The organization to get packages from',
+    'The organization(s) to get packages from (comma-separated for multiple)',
     'myorg',
   )
   .option(
@@ -370,82 +370,121 @@ const getPackageDetailsCommand = createBaseCommand({
       const startTime = new Date();
       const startTimeFormatted = startTime.toISOString();
 
-      const organization = opts.orgName;
-      const packageType = options.packageType.toUpperCase();
-      const csvOutput = path.resolve(options.csvOutput);
-      const summaryOutput = path.resolve(options.summaryOutput);
-
-      logger.info(`Fetching packages for organization: ${organization}`);
-      logger.info(`Package type: ${packageType}`);
-
-      fs.writeFileSync(csvOutput, getCSVHeaders() + '\n');
-      logger.info(`Created CSV file with headers at ${csvOutput}`);
-
-      let packageCount = 0;
-      let skippedCount = 0;
-      let totalSizeBytes = 0;
-
-      for await (const pkg of getOrgPackageDetails(
-        octokit,
-        organization,
-        packageType,
-        logger,
-        opts.pageSize,
-      )) {
-        if (pkg.name.startsWith('deleted_') && pkg.versions.totalCount === 0) {
-          logger.info(`Skipping package ${pkg.name} because it is deleted`);
-          skippedCount++;
-          continue;
-        }
-
-        // Fetch detailed package version information
-        logger.info(
-          `Fetching detailed version information for package: ${pkg.name}`,
-        );
-        const { totalFiles, totalSize, totalVersions } =
-          await getPackageVersionDetails(
-            octokit,
-            organization,
-            pkg.name,
-            logger,
-            opts.pageSize,
-          );
-
-        const csvRow = packageToCSVRow(
-          pkg,
-          totalFiles,
-          totalSize,
-          totalVersions,
-        );
-        fs.appendFileSync(csvOutput, csvRow + '\n');
-
-        totalSizeBytes += totalSize;
-
-        packageCount++;
-        if (packageCount % 100 === 0) {
-          logger.info(`Processed ${packageCount} packages so far`);
-        }
-      }
-
+      // Parse comma-separated organization names
+      const organizations = opts.orgName
+        .split(',')
+        .map((org: string) => org.trim());
       logger.info(
-        `Total packages retrieved and written to CSV: ${packageCount}`,
+        `Processing ${organizations.length} organization(s): ${organizations.join(', ')}`,
       );
 
-      if (packageCount === 0) {
-        logger.info('No packages found');
-      } else {
-        logger.info(`CSV data written incrementally to ${csvOutput}`);
-      }
+      const packageType = options.packageType.toUpperCase();
 
-      // Create and write summary report
-      const endTime = new Date();
-      const endTimeFormatted = endTime.toISOString();
-      const elapsedTimeMs = endTime.getTime() - startTime.getTime();
-      const elapsedTimeFormatted = formatElapsedTime(elapsedTimeMs);
+      // Create CSV and summary output filename templates
+      const baseCsvOutput = path.resolve(options.csvOutput);
+      const baseSummaryOutput = path.resolve(options.summaryOutput);
+      const csvDir = path.dirname(baseCsvOutput);
+      const csvExt = path.extname(baseCsvOutput);
+      const csvBaseName = path.basename(baseCsvOutput, csvExt);
+      const summaryDir = path.dirname(baseSummaryOutput);
+      const summaryExt = path.extname(baseSummaryOutput);
+      const summaryBaseName = path.basename(baseSummaryOutput, summaryExt);
 
-      const currentDate = new Date().toISOString().split('T')[0];
+      let totalPackageCount = 0;
+      let totalSkippedCount = 0;
+      let grandTotalSizeBytes = 0;
 
-      const summaryContent = `Summary Report
+      for (const organization of organizations) {
+        logger.info(`\n=== Processing organization: ${organization} ===`);
+
+        // Create org-specific output filenames
+        const orgCsvOutput = path.join(
+          csvDir,
+          `${csvBaseName}_${organization}${csvExt}`,
+        );
+        const orgSummaryOutput = path.join(
+          summaryDir,
+          `${summaryBaseName}_${organization}${summaryExt}`,
+        );
+
+        logger.info(`Fetching packages for organization: ${organization}`);
+        logger.info(`Package type: ${packageType}`);
+
+        fs.writeFileSync(orgCsvOutput, getCSVHeaders() + '\n');
+        logger.info(`Created CSV file with headers at ${orgCsvOutput}`);
+
+        let packageCount = 0;
+        let skippedCount = 0;
+        let totalSizeBytes = 0;
+
+        for await (const pkg of getOrgPackageDetails(
+          octokit,
+          organization,
+          packageType,
+          logger,
+          opts.pageSize,
+        )) {
+          if (
+            pkg.name.startsWith('deleted_') &&
+            pkg.versions.totalCount === 0
+          ) {
+            logger.info(`Skipping package ${pkg.name} because it is deleted`);
+            skippedCount++;
+            continue;
+          }
+
+          // Fetch detailed package version information
+          logger.info(
+            `Fetching detailed version information for package: ${pkg.name}`,
+          );
+          const { totalFiles, totalSize, totalVersions } =
+            await getPackageVersionDetails(
+              octokit,
+              organization,
+              pkg.name,
+              logger,
+              opts.pageSize,
+            );
+
+          const csvRow = packageToCSVRow(
+            pkg,
+            totalFiles,
+            totalSize,
+            totalVersions,
+          );
+          fs.appendFileSync(orgCsvOutput, csvRow + '\n');
+
+          totalSizeBytes += totalSize;
+
+          packageCount++;
+          if (packageCount % 100 === 0) {
+            logger.info(
+              `Processed ${packageCount} packages so far for ${organization}`,
+            );
+          }
+        }
+
+        logger.info(`Organization ${organization} summary:`);
+        logger.info(`  Packages retrieved and written to CSV: ${packageCount}`);
+        logger.info(`  Packages skipped (deleted): ${skippedCount}`);
+        logger.info(`  Total size (bytes): ${totalSizeBytes}`);
+        logger.info(`  Total size (formatted): ${filesize(totalSizeBytes)}`);
+
+        if (packageCount === 0) {
+          logger.info(`  No packages found for ${organization}`);
+        } else {
+          logger.info(`  CSV data written to ${orgCsvOutput}`);
+        }
+
+        // Create and write org-specific summary report
+        const endTime = new Date();
+        const endTimeFormatted = endTime.toISOString();
+        const elapsedTimeMs = endTime.getTime() - startTime.getTime();
+        const elapsedTimeFormatted = formatElapsedTime(elapsedTimeMs);
+
+        const currentDate = new Date().toISOString().split('T')[0];
+
+        const summaryContent = `Summary Report
 =============
 Date: ${currentDate}
 Start Time: ${startTimeFormatted}
@@ -458,8 +497,24 @@ Total Size (bytes): ${totalSizeBytes}
 Total Size (formatted): ${filesize(totalSizeBytes)}
 `;
 
-      fs.writeFileSync(summaryOutput, summaryContent);
-      logger.info(`Summary report written to ${summaryOutput}`);
+        fs.writeFileSync(orgSummaryOutput, summaryContent);
+        logger.info(`  Summary report written to ${orgSummaryOutput}`);
+
+        // Add to totals
+        totalPackageCount += packageCount;
+        totalSkippedCount += skippedCount;
+        grandTotalSizeBytes += totalSizeBytes;
+      }
+
+      logger.info('\n=== Overall Summary ===');
+      logger.info(`Total organizations processed: ${organizations.length}`);
+      logger.info(`Total packages processed: ${totalPackageCount}`);
+      logger.info(`Total packages skipped (deleted): ${totalSkippedCount}`);
+      logger.info(`Grand total size (bytes): ${grandTotalSizeBytes}`);
+      logger.info(
+        `Grand total size (formatted): ${filesize(grandTotalSizeBytes)}`,
+      );
+      logger.info('Finished');
     });
   });
 
