@@ -6,6 +6,7 @@ import getAssigneeIssues from './commands/get-issues-by-user.js';
 import listOrgMigrationsCommand from './commands/list-org-migrations.js';
 import unlockOrgRepositoryCommand from './commands/unlock-org-repository.js';
 import listWebhooksCommand from './commands/list-webhooks.js';
+import codespacesUsageCommand from './commands/codespaces-usage.js';
 
 const program = createProgram({
   name: 'octokit-sandbox',
@@ -17,6 +18,7 @@ const program = createProgram({
     listOrgMigrationsCommand,
     unlockOrgRepositoryCommand,
     listWebhooksCommand,
+    codespacesUsageCommand,
   ],
 });
 
