@@ -116,6 +116,13 @@ const listWebhooksCommand = createBaseCommand({
                 ) {
                   const url = new URL(webhook.config.url);
                   const baseUrl = `${url.protocol}//${url.host}`;
+                  if (uniqueBaseUrls.has(baseUrl)) {
+                    logger.info(
+                      `Skipping webhook with duplicate base URL: ${baseUrl}`,
+                    );
+                    continue;
+                  }
+                  uniqueBaseUrls.add(baseUrl);
                 }
 
                 // Collect unique URLs for separate outputs
