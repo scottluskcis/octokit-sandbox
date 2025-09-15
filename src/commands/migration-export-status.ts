@@ -61,6 +61,20 @@ async function downloadMigrationArchive(
         `${exportType} migration archive download URL obtained for id: ${migrationId}. Redirect URL: ${response.url}`,
       );
       return true;
+    } else if (response.status === 200) {
+      // For 200 responses, check if we have a download URL in the response headers or data
+      const downloadUrl =
+        response.headers?.location || response.data?.url || response.url;
+      if (downloadUrl) {
+        logger.info(
+          `${exportType} migration archive download URL obtained for id: ${migrationId}. Download URL: ${downloadUrl}`,
+        );
+      } else {
+        logger.info(
+          `${exportType} migration archive is available for id: ${migrationId}, but no direct download URL found. Response: ${JSON.stringify(response.headers)}`,
+        );
+      }
+      return true;
     } else {
       logger.error(
         `Failed to get download URL for ${exportType.toLowerCase()} migration archive ID ${migrationId}. Status: ${response.status}`,
