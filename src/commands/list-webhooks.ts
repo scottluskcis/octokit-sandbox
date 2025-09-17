@@ -12,6 +12,7 @@ interface WebhookData {
   id: number;
   name: string;
   active: boolean;
+  hasSecret: boolean;
   events: string[];
   url: string;
   contentType?: string;
@@ -146,6 +147,7 @@ const listWebhooksCommand = createBaseCommand({
                   id: webhook.id,
                   name: webhook.name,
                   active: webhook.active,
+                  hasSecret: webhook.config?.secret ? true : false,
                   events: webhook.events,
                   url: webhook.config?.url || 'N/A',
                   contentType: webhook.config?.content_type,
@@ -188,6 +190,7 @@ const listWebhooksCommand = createBaseCommand({
           'Webhook ID',
           'Name',
           'Active',
+          'Has Secret',
           'Events',
           'URL',
           'Content Type',
@@ -210,6 +213,7 @@ const listWebhooksCommand = createBaseCommand({
             webhook.id,
             webhook.name,
             webhook.active,
+            webhook.hasSecret,
             `"${webhook.events.join(';')}"`, // Quote and join events with semicolons
             `"${webhook.url}"`, // Quote URL in case it contains commas
             webhook.contentType || '',
