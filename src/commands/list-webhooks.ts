@@ -147,7 +147,7 @@ const listWebhooksCommand = createBaseCommand({
                   id: webhook.id,
                   name: webhook.name,
                   active: webhook.active,
-                  hasSecret: webhook.config?.secret ? true : false,
+                  hasSecret: Boolean(webhook.config?.secret),
                   events: webhook.events,
                   url: webhook.config?.url || 'N/A',
                   contentType: webhook.config?.content_type,
