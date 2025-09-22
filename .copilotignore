@@ -1,0 +1,23 @@
+# Environment files
+.env
+.env.*
+
+# Private keys
+keys/
+*.pem
+*.key
+
+# Logs that might contain sensitive data
+logs/
+
+# Node modules
+node_modules/
+
+# Output directories
+output/
+dist/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
