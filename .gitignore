@@ -40,3 +40,4 @@ coverage/
 
 package-summary.txt
 .DS_Store
+sample-export-ids.json

@@ -21,8 +21,10 @@
   "description": "",
   "dependencies": {
     "@scottluskcis/octokit-harness": "^0.0.10",
+    "@types/tar": "^6.1.13",
     "csv-parse": "^5.6.0",
-    "filesize": "^10.1.6"
+    "filesize": "^10.1.6",
+    "tar": "^7.4.3"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.3",
