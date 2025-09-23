@@ -6,6 +6,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getTeamMembers, parseTeamNames } from '../utils/teams.js';
 
+import { Option } from 'commander';
+
 interface TeamMemberData {
   teamName: string;
   teamSlug: string;
@@ -17,22 +19,27 @@ const listTeamMembersCommand = createBaseCommand({
   description:
     'List team members for specified teams in a GitHub organization and output to CSV',
 })
-  .option(
-    '--csv-output <csvOutput>',
-    'Path to write CSV output file',
-    './team-members.csv',
+  .addOption(
+    new Option('--csv-output <csvOutput>', 'Path to write CSV output file')
+      .env('CSV_OUTPUT')
+      .default('team-members.csv'),
   )
-  .option(
-    '--teams <teams>',
-    'Comma-separated list of team names/slugs to retrieve members for',
-    '',
+  .addOption(
+    new Option(
+      '--teams <teams>',
+      'Comma-separated list of team names/slugs to retrieve members for',
+    )
+      .env('TEAMS')
+      .makeOptionMandatory(),
   )
   .action(async (options) => {
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
       logger.info('Starting team members collection...');
 
       if (!options.teams) {
-        logger.error('Teams option is required. Use --teams to specify team names/slugs');
+        logger.error(
+          'Teams option is required. Use --teams to specify team names/slugs',
+        );
         return;
       }
 
@@ -44,9 +51,7 @@ const listTeamMembersCommand = createBaseCommand({
         return;
       }
 
-      logger.info(
-        `Processing ${teams.length} team(s): ${teams.join(', ')}`,
-      );
+      logger.info(`Processing ${teams.length} team(s): ${teams.join(', ')}`);
 
       const teamMemberData: TeamMemberData[] = [];
       const teamMap = new Map<string, string[]>();
@@ -99,8 +104,8 @@ const listTeamMembersCommand = createBaseCommand({
         const csvHeaders = [
           'Organization',
           'Team Name',
-          'Team Slug', 
-          'Member Login',
+          'Team Slug',
+          'Username',
         ];
 
         fs.writeFileSync(csvFilename, csvHeaders.join(',') + '\n');
