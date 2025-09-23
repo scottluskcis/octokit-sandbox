@@ -6,6 +6,7 @@ import getAssigneeIssues from './commands/get-issues-by-user.js';
 import listOrgMigrationsCommand from './commands/list-org-migrations.js';
 import unlockOrgRepositoryCommand from './commands/unlock-org-repository.js';
 import listWebhooksCommand from './commands/list-webhooks.js';
+import listTeamMembersCommand from './commands/list-team-members.js';
 import codespacesUsageCommand from './commands/codespaces-usage.js';
 import getMigrationExportStatusCommand from './commands/migration-export-status.js';
 
@@ -19,6 +20,7 @@ const program = createProgram({
     listOrgMigrationsCommand,
     unlockOrgRepositoryCommand,
     listWebhooksCommand,
+    listTeamMembersCommand,
     codespacesUsageCommand,
     getMigrationExportStatusCommand,
   ],
