@@ -36,13 +36,6 @@ const listTeamMembersCommand = createBaseCommand({
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
       logger.info('Starting team members collection...');
 
-      if (!options.teams) {
-        logger.error(
-          'Teams option is required. Use --teams to specify team names/slugs',
-        );
-        return;
-      }
-
       // Parse comma-separated team names
       const teams = parseTeamNames(options.teams);
 
