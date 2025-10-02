@@ -2,6 +2,7 @@ import {
   createBaseCommand,
   executeWithOctokit,
 } from '@scottluskcis/octokit-harness';
+import { Option } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -29,25 +30,34 @@ const listWebhooksCommand = createBaseCommand({
   description:
     'List repository webhooks for all repositories in a GitHub organization',
 })
-  .option(
-    '--csv-output <csvOutput>',
-    'Path to write CSV output file',
-    './repo-webhooks.csv',
+  .addOption(
+    new Option('--csv-output <csvOutput>', 'Path to write CSV output file')
+      .env('CSV_OUTPUT')
+      .default('./repo-webhooks.csv'),
   )
-  .option(
-    '--only-active-repos',
-    'Only include active repositories in the check',
-    true,
+  .addOption(
+    new Option(
+      '--only-active-repos',
+      'Only include active repositories in the check',
+    )
+      .env('ONLY_ACTIVE_REPOS')
+      .default(true),
   )
-  .option(
-    '--only-active-webhooks',
-    'Only include active webhooks in the output',
-    true,
+  .addOption(
+    new Option(
+      '--only-active-webhooks',
+      'Only include active webhooks in the output',
+    )
+      .env('ONLY_ACTIVE_WEBHOOKS')
+      .default(true),
   )
-  .option(
-    '--only-unique-base-urls',
-    'Only include unique base URLs in the webhook list',
-    true,
+  .addOption(
+    new Option(
+      '--only-unique-base-urls',
+      'Only include unique base URLs in the webhook list',
+    )
+      .env('ONLY_UNIQUE_BASE_URLS')
+      .default(true),
   )
   .action(async (options) => {
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
