@@ -37,27 +37,39 @@ const listWebhooksCommand = createBaseCommand({
   )
   .addOption(
     new Option(
-      '--only-active-repos',
+      '--only-active-repos [onlyActiveRepos]',
       'Only include active repositories in the check',
     )
       .env('ONLY_ACTIVE_REPOS')
-      .default(true),
+      .default(true)
+      .argParser((value) => {
+        if (typeof value === 'boolean') return value;
+        return value === 'true';
+      }),
   )
   .addOption(
     new Option(
-      '--only-active-webhooks',
+      '--only-active-webhooks [onlyActiveWebhooks]',
       'Only include active webhooks in the output',
     )
       .env('ONLY_ACTIVE_WEBHOOKS')
-      .default(true),
+      .default(true)
+      .argParser((value) => {
+        if (typeof value === 'boolean') return value;
+        return value === 'true';
+      }),
   )
   .addOption(
     new Option(
-      '--only-unique-base-urls',
+      '--only-unique-base-urls [onlyUniqueBaseUrls]',
       'Only include unique base URLs in the webhook list',
     )
       .env('ONLY_UNIQUE_BASE_URLS')
-      .default(true),
+      .default(true)
+      .argParser((value) => {
+        if (typeof value === 'boolean') return value;
+        return value === 'true';
+      }),
   )
   .action(async (options) => {
     await executeWithOctokit(options, async ({ octokit, logger, opts }) => {
